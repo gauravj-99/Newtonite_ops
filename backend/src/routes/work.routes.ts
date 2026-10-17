@@ -8,11 +8,30 @@ import {
   requireTeamAccess,
   requireWorkItemAccess,
 } from "../middleware/authorize.middleware";
-import { approveWorkItem, getWorkItem } from "../controllers/work.controller";
+import {
+  approveWorkItem,
+  createWorkItem,
+  getWorkItem,
+  listTeamWorkItems,
+  updateWorkItem,
+} from "../controllers/work.controller";
 
 const router = Router();
 
 router.use(authenticate);
+
+router.get(
+  "/teams/:teamId/items",
+  requireTeamAccess("teamId"),
+  listTeamWorkItems
+);
+
+router.post(
+  "/teams/:teamId/items",
+  requireTeamAccess("teamId"),
+  requireRole([Role.MEMBER, Role.LEAD, Role.ADMIN]),
+  createWorkItem
+);
 
 router.get("/team/:teamId", requireTeamAccess("teamId"), (req, res) => {
   res.status(200).json({
@@ -23,6 +42,13 @@ router.get("/team/:teamId", requireTeamAccess("teamId"), (req, res) => {
 });
 
 router.get("/items/:workItemId", requireWorkItemAccess("workItemId"), getWorkItem);
+
+router.patch(
+  "/items/:workItemId",
+  requireWorkItemAccess("workItemId"),
+  requireRole([Role.MEMBER, Role.LEAD, Role.ADMIN]),
+  updateWorkItem
+);
 
 router.patch(
   "/items/:workItemId/approve",

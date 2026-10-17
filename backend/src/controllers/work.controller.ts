@@ -1,42 +1,113 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 
 import { prisma } from "../config/prisma";
+import {
+  createWorkItem as createWorkItemService,
+  getWorkItemById,
+  listWorkItems,
+  updateWorkItem as updateWorkItemService,
+} from "../services/work-item.service";
+import { AppError } from "../utils/appError";
 
-export const getWorkItem = async (req: Request, res: Response) => {
-  const workItemId = Number(req.params.workItemId);
-
-  const workItem = await prisma.workItem.findUnique({
-    where: { id: workItemId },
-    include: {
-      team: true,
-      assignee: {
-        select: { id: true, name: true, email: true },
-      },
-      createdBy: {
-        select: { id: true, name: true, email: true },
-      },
-    },
-  });
-
-  res.status(200).json({
-    success: true,
-    data: workItem,
-  });
+const getAuthenticatedUserId = (req: Request): number => {
+  if (!req.user) {
+    throw new AppError(401, "Authentication required");
+  }
+  return req.user.userId;
 };
 
-export const approveWorkItem = async (req: Request, res: Response) => {
-  const workItemId = Number(req.params.workItemId);
+export const createWorkItem = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const item = await createWorkItemService(
+      getAuthenticatedUserId(req),
+      req.params.teamId,
+      req.body
+    );
 
-  const updatedWorkItem = await prisma.workItem.update({
-    where: { id: workItemId },
-    data: {
-      status: "RESOLVED",
-    },
-  });
+    res.status(201).json({ success: true, data: item });
+  } catch (error) {
+    next(error);
+  }
+};
 
-  res.status(200).json({
-    success: true,
-    message: "Work item approved",
-    data: updatedWorkItem,
-  });
+export const listTeamWorkItems = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await listWorkItems(
+      getAuthenticatedUserId(req),
+      req.params.teamId,
+      req.query
+    );
+
+    res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getWorkItem = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const item = await getWorkItemById(
+      getAuthenticatedUserId(req),
+      req.params.workItemId
+    );
+
+    res.status(200).json({ success: true, data: item });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateWorkItem = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const item = await updateWorkItemService(
+      getAuthenticatedUserId(req),
+      req.params.workItemId,
+      req.body
+    );
+
+    res.status(200).json({ success: true, data: item });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const approveWorkItem = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const workItemId = Number(req.params.workItemId);
+
+    const updatedWorkItem = await prisma.workItem.update({
+      where: { id: workItemId },
+      data: {
+        status: "RESOLVED",
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Work item approved",
+      data: updatedWorkItem,
+    });
+  } catch (error) {
+    next(error);
+  }
 };
