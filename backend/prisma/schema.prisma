@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  VIEWER
+  MEMBER
+  LEAD
+  ADMIN
+}
+
+enum WorkItemType {
+  INCIDENT
+  CUSTOMER_ISSUE
+  PAYMENT
+  COMPLIANCE
+  TASK
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum WorkStatus {
+  OPEN
+  IN_PROGRESS
+  AWAITING_APPROVAL
+  RESOLVED
+  CLOSED
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+
+  memberships Membership[]
+
+  createdItems  WorkItem[] @relation("CreatedBy")
+  assignedItems WorkItem[] @relation("AssignedTo")
+
+  comments   Comment[]
+  activities ActivityEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Team {
+  id   Int    @id @default(autoincrement())
+  name String @unique
+
+  memberships Membership[]
+  workItems   WorkItem[]
+}
+
+model Membership {
+  id     Int @id @default(autoincrement())
+
+  userId Int
+  teamId Int
+
+  role Role
+
+  user User @relation(fields: [userId], references: [id])
+  team Team @relation(fields: [teamId], references: [id])
+
+  @@unique([userId, teamId])
+}
+
+model WorkItem {
+  id          Int @id @default(autoincrement())
+
+  title       String
+  description String
+
+  type        WorkItemType
+  priority    Priority
+
+  status      WorkStatus @default(OPEN)
+
+  version     Int @default(1)
+
+  teamId      Int
+
+  assigneeId  Int?
+  createdById Int
+
+  dueDate     DateTime?
+
+  team Team @relation(fields: [teamId], references: [id])
+
+  assignee User? @relation("AssignedTo", fields: [assigneeId], references: [id])
+
+  createdBy User @relation("CreatedBy", fields: [createdById], references: [id])
+
+  comments   Comment[]
+  activities ActivityEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Comment {
+  id         Int @id @default(autoincrement())
+
+  content    String
+
+  userId     Int
+  workItemId Int
+
+  user     User @relation(fields: [userId], references: [id])
+  workItem WorkItem @relation(fields: [workItemId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model ActivityEvent {
+  id         Int @id @default(autoincrement())
+
+  eventType  String
+  oldValue   String?
+  newValue   String?
+
+  actorId    Int
+  workItemId Int
+
+  actor    User @relation(fields: [actorId], references: [id])
+  workItem WorkItem @relation(fields: [workItemId], references: [id])
+
+  createdAt DateTime @default(now())
+}
