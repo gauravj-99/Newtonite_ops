@@ -1,108 +1,144 @@
-Engineering Decisions
-1. Authentication Strategy
-Decision
+# Engineering Decisions
+
+## 1. Authentication Strategy
+
+### Decision
 JWT authentication was used for securing API access.
 
-Reasoning
+### Reasoning
 JWT is stateless, easy to use with APIs, and does not require server-side session storage.
 
-Tradeoff
+### Tradeoff
 Token revocation is harder than session-based authentication.
 
-2. Team-Based Role Model
-Decision
+---
+
+## 2. Team-Based Role Model
+
+### Decision
 A Membership table was used to connect users and teams while storing roles.
 
-Reasoning
+### Reasoning
 A user can belong to multiple teams and have different roles in each team.
 
-Tradeoff
+### Tradeoff
 Additional joins are required when checking permissions.
 
-3. Server-Side Authorization
-Decision
+---
+
+## 3. Server-Side Authorization
+
+### Decision
 Authorization checks are performed on the backend.
 
-Reasoning
+### Reasoning
 Frontend validation can be bypassed. Security must be enforced on the server.
 
-Tradeoff
+### Tradeoff
 Additional validation logic is required on protected APIs.
 
-4. Activity History
-Decision
+---
+
+## 4. Activity History
+
+### Decision
 A separate ActivityEvent table was created.
 
-Reasoning
+### Reasoning
 This provides an audit trail for important actions such as assignments, status changes, and comments.
 
-Tradeoff
+### Tradeoff
 Additional database storage is required.
 
-5. Workflow Validation
-Decision
+---
+
+## 5. Workflow Validation
+
+### Decision
 Workflow transitions are validated on the server.
 
-Reasoning
+### Reasoning
 This prevents invalid states and ensures business rules are enforced.
 
-Supported Flow
-OPEN → IN_PROGRESS → AWAITING_APPROVAL → RESOLVED → CLOSED
+### Supported Flow
 
-Tradeoff
+OPEN
+→ IN_PROGRESS
+→ AWAITING_APPROVAL
+→ RESOLVED
+→ CLOSED
+
+### Tradeoff
 Additional validation logic is required.
 
-6. Atomic Claim Operation
-Decision
+---
+
+## 6. Atomic Claim Operation
+
+### Decision
 Work item claiming was implemented as an atomic operation.
 
-Reasoning
+### Reasoning
 Only one user can successfully claim an unassigned work item.
 
-Tradeoff
+### Tradeoff
 Implementation is more complex than a simple update.
 
-7. Optimistic Locking
-Decision
+---
+
+## 7. Optimistic Locking
+
+### Decision
 A version field was added to work items.
 
-Reasoning
+### Reasoning
 This prevents stale updates from overwriting newer changes.
 
-Tradeoff
+### Tradeoff
 Clients must send the current version during updates.
 
-8. Database Choice
-Decision
+---
+
+## 8. Database Choice
+
+### Decision
 SQLite with Prisma was selected.
 
-Reasoning
+### Reasoning
 The assessment was completed on a managed company laptop with installation restrictions. SQLite enabled rapid local development and allowed focus on business requirements.
 
-Tradeoff
+### Tradeoff
 SQLite is not ideal for large-scale production systems.
 
-9. Architecture
-Decision
+---
+
+## 9. Architecture
+
+### Decision
 The application follows a layered architecture.
 
 Routes → Controllers → Services → Prisma
 
-Reasoning
+### Reasoning
 This separation improves maintainability and testability.
 
-Tradeoff
+### Tradeoff
 More files and project structure are required.
 
-10. Testing Strategy
-Decision
+---
+
+## 10. Testing Strategy
+
+### Decision
 Automated tests were written for critical business rules.
 
-Areas Tested
-Authentication
-Authorization
-Workflow Validation
-Atomic Claim
-Optimistic Locking
-Reasoning
+### Areas Tested
+
+- Authentication
+- Authorization
+- Workflow Validation
+- Atomic Claim
+- Optimistic Locking
+
+### Reasoning
 Business-critical behavior was prioritized over simple CRUD testing.
