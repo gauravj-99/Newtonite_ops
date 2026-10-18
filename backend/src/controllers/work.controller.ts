@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 
 import {
   approveWorkItem as approveWorkItemService,
+  claimWorkItem as claimWorkItemService,
   createWorkItem as createWorkItemService,
   getWorkItemActivity,
   getWorkItemById,
@@ -85,6 +86,27 @@ export const updateWorkItem = async (
     );
 
     res.status(200).json({ success: true, data: item });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const claimWorkItem = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const item = await claimWorkItemService(
+      getAuthenticatedUserId(req),
+      req.params.id
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Work item claimed",
+      data: item,
+    });
   } catch (error) {
     next(error);
   }

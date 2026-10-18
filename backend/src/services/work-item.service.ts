@@ -417,6 +417,62 @@ export const updateWorkItem = async (
   });
 };
 
+export const claimWorkItem = async (
+  userId: number,
+  workItemIdValue: unknown
+) => {
+  const workItemId = parsePositiveInteger(workItemIdValue, "id");
+  const item = await prisma.workItem.findUnique({
+    where: { id: workItemId },
+    select: { teamId: true },
+  });
+
+  if (!item) {
+    throw new AppError(404, "Work item not found");
+  }
+
+  await AuthorizationService.assertTeamAccess(userId, item.teamId);
+
+  return prisma.$transaction(async (tx) => {
+    const claimed = await tx.workItem.updateMany({
+      where: {
+        id: workItemId,
+        teamId: item.teamId,
+        assigneeId: null,
+      },
+      data: { assigneeId: userId },
+    });
+
+    if (claimed.count === 0) {
+      const currentItem = await tx.workItem.findFirst({
+        where: { id: workItemId, teamId: item.teamId },
+        select: { id: true },
+      });
+
+      if (!currentItem) {
+        throw new AppError(404, "Work item not found");
+      }
+
+      throw new AppError(409, "Work item has already been claimed");
+    }
+
+    await tx.activityEvent.create({
+      data: {
+        eventType: "WORK_ITEM_ASSIGNED",
+        oldValue: null,
+        newValue: String(userId),
+        actorId: userId,
+        workItemId,
+      },
+    });
+
+    return tx.workItem.findFirst({
+      where: { id: workItemId, teamId: item.teamId },
+      include: workItemInclude,
+    });
+  });
+};
+
 const WORKFLOW_TRANSITIONS: Record<WorkStatus, readonly WorkStatus[]> = {
   [WorkStatus.OPEN]: [WorkStatus.IN_PROGRESS],
   [WorkStatus.IN_PROGRESS]: [WorkStatus.AWAITING_APPROVAL],
