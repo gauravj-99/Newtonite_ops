@@ -150,7 +150,16 @@ const parseUpdateInput = (body: unknown) => {
     throw new AppError(400, "Request body must contain at least one update field");
   }
 
+  if (
+    typeof body.version !== "number" ||
+    !Number.isSafeInteger(body.version) ||
+    body.version < 1
+  ) {
+    throw new AppError(400, "version is required and must be a positive integer");
+  }
+
   const allowedFields = new Set([
+    "version",
     "title",
     "description",
     "type",
@@ -196,7 +205,11 @@ const parseUpdateInput = (body: unknown) => {
     data.dueDate = parseOptionalDate(body.dueDate);
   }
 
-  return data;
+  if (Object.keys(data).length === 0) {
+    throw new AppError(400, "At least one work item field must be updated");
+  }
+
+  return { expectedVersion: body.version as number, data };
 };
 
 export const createWorkItem = async (
@@ -347,7 +360,7 @@ export const updateWorkItem = async (
   }
 
   await AuthorizationService.assertTeamAccess(userId, existing.teamId);
-  const data = parseUpdateInput(body);
+  const { expectedVersion, data } = parseUpdateInput(body);
 
   if (isRecord(body) && hasOwn(body, "assigneeId")) {
     await validateAssignee(
@@ -362,6 +375,7 @@ export const updateWorkItem = async (
       select: {
         priority: true,
         assigneeId: true,
+        version: true,
       },
     });
 
@@ -373,12 +387,33 @@ export const updateWorkItem = async (
       where: {
         id: workItemId,
         teamId: existing.teamId,
+        version: expectedVersion,
       },
-      data,
+      data: {
+        ...data,
+        version: { increment: 1 },
+      },
     });
 
     if (result.count === 0) {
-      throw new AppError(404, "Work item not found");
+      const latestWorkItem = await tx.workItem.findFirst({
+        where: {
+          id: workItemId,
+          teamId: existing.teamId,
+        },
+        include: workItemInclude,
+      });
+
+      if (!latestWorkItem) {
+        throw new AppError(404, "Work item not found");
+      }
+
+      throw new AppError(
+        409,
+        "Work item version conflict; refresh and retry your update",
+        true,
+        { latestWorkItem }
+      );
     }
 
     const events: Prisma.ActivityEventCreateManyInput[] = [];
@@ -440,7 +475,10 @@ export const claimWorkItem = async (
         teamId: item.teamId,
         assigneeId: null,
       },
-      data: { assigneeId: userId },
+      data: {
+        assigneeId: userId,
+        version: { increment: 1 },
+      },
     });
 
     if (claimed.count === 0) {
@@ -548,7 +586,10 @@ export const transitionWorkItemStatus = async (
         teamId: item.teamId,
         status: current.status,
       },
-      data: { status: targetStatus },
+      data: {
+        status: targetStatus,
+        version: { increment: 1 },
+      },
     });
 
     if (updated.count === 0) {

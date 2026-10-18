@@ -27,5 +27,8 @@ export const errorHandler = (
   res.status(statusCode).json({
     success: false,
     message,
+    ...(err instanceof AppError && err.details !== undefined
+      ? { data: err.details }
+      : {}),
   });
 };
