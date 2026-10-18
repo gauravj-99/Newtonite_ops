@@ -8,7 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "node tests/run-tests.js",
-    "postinstall": "prisma skills sync || exit 0",
+    "postinstall": "prisma generate",
     "seed": "ts-node src/seed.ts"
   },
   "keywords": [],

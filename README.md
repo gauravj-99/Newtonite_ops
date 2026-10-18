@@ -141,6 +141,8 @@ cd newtonite-ops
 ```bash
 cd backend
 
+copy .env.example .env
+
 npm install
 
 npx prisma db push
