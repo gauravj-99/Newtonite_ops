@@ -1,12 +1,14 @@
 import { NextFunction, Request, Response } from "express";
 
-import { prisma } from "../config/prisma";
 import {
+  approveWorkItem as approveWorkItemService,
   createWorkItem as createWorkItemService,
+  getWorkItemActivity,
   getWorkItemById,
   listWorkItems,
   updateWorkItem as updateWorkItemService,
 } from "../services/work-item.service";
+import { addWorkItemComment } from "../services/comment.service";
 import { AppError } from "../utils/appError";
 
 const getAuthenticatedUserId = (req: Request): number => {
@@ -87,20 +89,51 @@ export const updateWorkItem = async (
   }
 };
 
+export const getWorkItemTimeline = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const events = await getWorkItemActivity(
+      getAuthenticatedUserId(req),
+      req.params.workItemId
+    );
+
+    res.status(200).json({ success: true, data: events });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addComment = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const comment = await addWorkItemComment(
+      getAuthenticatedUserId(req),
+      req.params.workItemId,
+      req.body?.content
+    );
+
+    res.status(201).json({ success: true, data: comment });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const approveWorkItem = async (
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
-    const workItemId = Number(req.params.workItemId);
-
-    const updatedWorkItem = await prisma.workItem.update({
-      where: { id: workItemId },
-      data: {
-        status: "RESOLVED",
-      },
-    });
+    const updatedWorkItem = await approveWorkItemService(
+      getAuthenticatedUserId(req),
+      req.params.workItemId
+    );
 
     res.status(200).json({
       success: true,

@@ -10,8 +10,10 @@ import {
 } from "../middleware/authorize.middleware";
 import {
   approveWorkItem,
+  addComment,
   createWorkItem,
   getWorkItem,
+  getWorkItemTimeline,
   listTeamWorkItems,
   updateWorkItem,
 } from "../controllers/work.controller";
@@ -48,6 +50,18 @@ router.patch(
   requireWorkItemAccess("workItemId"),
   requireRole([Role.MEMBER, Role.LEAD, Role.ADMIN]),
   updateWorkItem
+);
+
+router.get(
+  "/items/:workItemId/activity",
+  requireWorkItemAccess("workItemId"),
+  getWorkItemTimeline
+);
+
+router.post(
+  "/items/:workItemId/comments",
+  requireWorkItemAccess("workItemId"),
+  addComment
 );
 
 router.patch(

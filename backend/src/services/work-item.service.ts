@@ -214,13 +214,37 @@ export const createWorkItem = async (
   const input = parseCreateInput(body);
   await validateAssignee(input.assigneeId, teamId);
 
-  return prisma.workItem.create({
-    data: {
-      ...input,
-      teamId,
-      createdById: userId,
-    },
-    include: workItemInclude,
+  return prisma.$transaction(async (tx) => {
+    const item = await tx.workItem.create({
+      data: {
+        ...input,
+        teamId,
+        createdById: userId,
+      },
+      include: workItemInclude,
+    });
+
+    await tx.activityEvent.create({
+      data: {
+        eventType: "WORK_ITEM_CREATED",
+        newValue: item.title,
+        actorId: userId,
+        workItemId: item.id,
+      },
+    });
+
+    if (input.assigneeId !== null) {
+      await tx.activityEvent.create({
+        data: {
+          eventType: "WORK_ITEM_ASSIGNED",
+          newValue: String(input.assigneeId),
+          actorId: userId,
+          workItemId: item.id,
+        },
+      });
+    }
+
+    return item;
   });
 };
 
@@ -319,7 +343,7 @@ export const updateWorkItem = async (
   const workItemId = parsePositiveInteger(workItemIdValue, "workItemId");
   const existing = await prisma.workItem.findUnique({
     where: { id: workItemId },
-    select: { id: true, teamId: true, status: true },
+    select: { id: true, teamId: true },
   });
 
   if (!existing) {
@@ -336,27 +360,157 @@ export const updateWorkItem = async (
     );
   }
 
-  if (data.status === WorkStatus.RESOLVED && existing.status !== WorkStatus.RESOLVED) {
+  if (data.status === WorkStatus.RESOLVED) {
     await AuthorizationService.assertCanApproveWorkItem(userId, workItemId);
   }
 
-  const result = await prisma.workItem.updateMany({
-    where: {
-      id: workItemId,
-      teamId: existing.teamId,
-    },
-    data,
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.workItem.findFirst({
+      where: { id: workItemId, teamId: existing.teamId },
+      select: {
+        title: true,
+        status: true,
+        priority: true,
+        assigneeId: true,
+      },
+    });
+
+    if (!current) {
+      throw new AppError(404, "Work item not found");
+    }
+
+    const result = await tx.workItem.updateMany({
+      where: {
+        id: workItemId,
+        teamId: existing.teamId,
+      },
+      data,
+    });
+
+    if (result.count === 0) {
+      throw new AppError(404, "Work item not found");
+    }
+
+    const events: Prisma.ActivityEventCreateManyInput[] = [];
+
+    if (data.assigneeId !== undefined && data.assigneeId !== current.assigneeId) {
+      events.push({
+        eventType: "WORK_ITEM_ASSIGNED",
+        oldValue: current.assigneeId === null ? null : String(current.assigneeId),
+        newValue: data.assigneeId === null ? null : String(data.assigneeId),
+        actorId: userId,
+        workItemId,
+      });
+    }
+
+    if (data.status !== undefined && data.status !== current.status) {
+      events.push({
+        eventType: "STATUS_CHANGED",
+        oldValue: current.status,
+        newValue: data.status as WorkStatus,
+        actorId: userId,
+        workItemId,
+      });
+    }
+
+    if (data.priority !== undefined && data.priority !== current.priority) {
+      events.push({
+        eventType: "PRIORITY_CHANGED",
+        oldValue: current.priority,
+        newValue: data.priority as Priority,
+        actorId: userId,
+        workItemId,
+      });
+    }
+
+    if (events.length > 0) {
+      await tx.activityEvent.createMany({ data: events });
+    }
+
+    return tx.workItem.findFirst({
+      where: {
+        id: workItemId,
+        teamId: existing.teamId,
+      },
+      include: workItemInclude,
+    });
+  });
+};
+
+export const approveWorkItem = async (userId: number, workItemIdValue: unknown) => {
+  const workItemId = parsePositiveInteger(workItemIdValue, "workItemId");
+  const item = await prisma.workItem.findUnique({
+    where: { id: workItemId },
+    select: { teamId: true },
   });
 
-  if (result.count === 0) {
+  if (!item) {
     throw new AppError(404, "Work item not found");
   }
 
-  return prisma.workItem.findFirst({
-    where: {
-      id: workItemId,
-      teamId: existing.teamId,
+  await AuthorizationService.assertCanApproveWorkItem(userId, workItemId);
+
+  return prisma.$transaction(async (tx) => {
+    const current = await tx.workItem.findFirst({
+      where: { id: workItemId, teamId: item.teamId },
+      select: { status: true },
+    });
+
+    if (!current) {
+      throw new AppError(404, "Work item not found");
+    }
+
+    const updated = await tx.workItem.updateMany({
+      where: { id: workItemId, teamId: item.teamId },
+      data: { status: WorkStatus.RESOLVED },
+    });
+
+    if (updated.count === 0) {
+      throw new AppError(404, "Work item not found");
+    }
+
+    if (current.status !== WorkStatus.RESOLVED) {
+      await tx.activityEvent.create({
+        data: {
+          eventType: "STATUS_CHANGED",
+          oldValue: current.status,
+          newValue: WorkStatus.RESOLVED,
+          actorId: userId,
+          workItemId,
+        },
+      });
+    }
+
+    return tx.workItem.findFirst({
+      where: { id: workItemId, teamId: item.teamId },
+      include: workItemInclude,
+    });
+  });
+};
+
+export const getWorkItemActivity = async (
+  userId: number,
+  workItemIdValue: unknown
+) => {
+  const workItemId = parsePositiveInteger(workItemIdValue, "workItemId");
+  const item = await prisma.workItem.findUnique({
+    where: { id: workItemId },
+    select: { teamId: true },
+  });
+
+  if (!item) {
+    throw new AppError(404, "Work item not found");
+  }
+
+  await AuthorizationService.assertTeamAccess(userId, item.teamId);
+
+  return prisma.activityEvent.findMany({
+    where: { workItemId },
+    include: {
+      actor: {
+        select: { id: true, name: true, email: true },
+      },
     },
-    include: workItemInclude,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
   });
 };
