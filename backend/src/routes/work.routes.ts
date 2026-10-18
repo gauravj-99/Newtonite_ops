@@ -74,7 +74,7 @@ router.post(
 router.patch(
   "/items/:workItemId/approve",
   requireWorkItemAccess("workItemId"),
-  requireRole(Role.LEAD),
+  requireRole(Role.LEAD, "teamId", { allowAdmin: false }),
   approveWorkItem
 );
 
