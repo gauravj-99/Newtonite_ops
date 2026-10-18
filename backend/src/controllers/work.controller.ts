@@ -12,12 +12,14 @@ import {
 } from "../services/work-item.service";
 import { addWorkItemComment } from "../services/comment.service";
 import { AppError } from "../utils/appError";
+import { AuthRequest } from "../types/auth.types";
 
 const getAuthenticatedUserId = (req: Request): number => {
-  if (!req.user) {
+  const authenticatedRequest = req as AuthRequest;
+  if (!authenticatedRequest.user) {
     throw new AppError(401, "Authentication required");
   }
-  return req.user.userId;
+  return authenticatedRequest.user.userId;
 };
 
 export const createWorkItem = async (

@@ -4,6 +4,7 @@ import { Role } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/appError";
 import { AuthorizationService } from "../services/authorization.service";
+import { AuthRequest } from "../types/auth.types";
 
 const resolveTeamId = (req: Request, paramName: string): number | null => {
   const value =
@@ -23,7 +24,7 @@ const resolveTeamId = (req: Request, paramName: string): number | null => {
 export const requireTeamAccess = (teamIdParam = "teamId") => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = req.user?.userId;
+      const userId = (req as AuthRequest).user?.userId;
 
       if (!userId) {
         return next(new AppError(401, "Authentication required"));
@@ -47,7 +48,7 @@ export const requireTeamAccess = (teamIdParam = "teamId") => {
 export const requireWorkItemAccess = (workItemParam = "workItemId") => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = req.user?.userId;
+      const userId = (req as AuthRequest).user?.userId;
 
       if (!userId) {
         return next(new AppError(401, "Authentication required"));
@@ -80,7 +81,7 @@ export const requireWorkItemAccess = (workItemParam = "workItemId") => {
 export const requireRole = (allowedRoles: Role | Role[], teamIdParam = "teamId") => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = req.user?.userId;
+      const userId = (req as AuthRequest).user?.userId;
 
       if (!userId) {
         return next(new AppError(401, "Authentication required"));
