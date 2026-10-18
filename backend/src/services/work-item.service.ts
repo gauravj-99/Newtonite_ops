@@ -1,6 +1,7 @@
 import {
   Priority,
   Prisma,
+  Role,
   WorkItemType,
   WorkStatus,
 } from "@prisma/client";
@@ -154,7 +155,6 @@ const parseUpdateInput = (body: unknown) => {
     "description",
     "type",
     "priority",
-    "status",
     "assigneeId",
     "dueDate",
   ]);
@@ -186,10 +186,6 @@ const parseUpdateInput = (body: unknown) => {
 
   if (hasOwn(body, "priority")) {
     data.priority = parseEnum(body.priority, Object.values(Priority), "priority");
-  }
-
-  if (hasOwn(body, "status")) {
-    data.status = parseEnum(body.status, Object.values(WorkStatus), "status");
   }
 
   if (hasOwn(body, "assigneeId")) {
@@ -360,16 +356,10 @@ export const updateWorkItem = async (
     );
   }
 
-  if (data.status === WorkStatus.RESOLVED) {
-    await AuthorizationService.assertCanApproveWorkItem(userId, workItemId);
-  }
-
   return prisma.$transaction(async (tx) => {
     const current = await tx.workItem.findFirst({
       where: { id: workItemId, teamId: existing.teamId },
       select: {
-        title: true,
-        status: true,
         priority: true,
         assigneeId: true,
       },
@@ -403,16 +393,6 @@ export const updateWorkItem = async (
       });
     }
 
-    if (data.status !== undefined && data.status !== current.status) {
-      events.push({
-        eventType: "STATUS_CHANGED",
-        oldValue: current.status,
-        newValue: data.status as WorkStatus,
-        actorId: userId,
-        workItemId,
-      });
-    }
-
     if (data.priority !== undefined && data.priority !== current.priority) {
       events.push({
         eventType: "PRIORITY_CHANGED",
@@ -437,18 +417,39 @@ export const updateWorkItem = async (
   });
 };
 
-export const approveWorkItem = async (userId: number, workItemIdValue: unknown) => {
+const WORKFLOW_TRANSITIONS: Record<WorkStatus, readonly WorkStatus[]> = {
+  [WorkStatus.OPEN]: [WorkStatus.IN_PROGRESS],
+  [WorkStatus.IN_PROGRESS]: [WorkStatus.AWAITING_APPROVAL],
+  [WorkStatus.AWAITING_APPROVAL]: [WorkStatus.RESOLVED],
+  [WorkStatus.RESOLVED]: [WorkStatus.CLOSED],
+  [WorkStatus.CLOSED]: [],
+};
+
+export const transitionWorkItemStatus = async (
+  userId: number,
+  workItemIdValue: unknown,
+  targetStatusValue: unknown
+) => {
   const workItemId = parsePositiveInteger(workItemIdValue, "workItemId");
+  if (!isRecord(targetStatusValue) || typeof targetStatusValue.status !== "string") {
+    throw new AppError(400, "A target status is required");
+  }
+  const targetStatus = parseEnum(
+    targetStatusValue.status,
+    Object.values(WorkStatus),
+    "status"
+  );
+
   const item = await prisma.workItem.findUnique({
     where: { id: workItemId },
-    select: { teamId: true },
+    select: { id: true, teamId: true },
   });
 
   if (!item) {
     throw new AppError(404, "Work item not found");
   }
 
-  await AuthorizationService.assertCanApproveWorkItem(userId, workItemId);
+  await AuthorizationService.assertTeamAccess(userId, item.teamId);
 
   return prisma.$transaction(async (tx) => {
     const current = await tx.workItem.findFirst({
@@ -460,26 +461,53 @@ export const approveWorkItem = async (userId: number, workItemIdValue: unknown) 
       throw new AppError(404, "Work item not found");
     }
 
+    if (!WORKFLOW_TRANSITIONS[current.status].includes(targetStatus)) {
+      throw new AppError(
+        400,
+        `Invalid work item status transition: ${current.status} -> ${targetStatus}`
+      );
+    }
+
+    if (
+      current.status === WorkStatus.AWAITING_APPROVAL &&
+      targetStatus === WorkStatus.RESOLVED
+    ) {
+      const membership = await tx.membership.findUnique({
+        where: {
+          userId_teamId: {
+            userId,
+            teamId: item.teamId,
+          },
+        },
+        select: { role: true },
+      });
+      if (membership?.role !== Role.LEAD) {
+        throw new AppError(403, "Only a LEAD can approve a work item");
+      }
+    }
+
     const updated = await tx.workItem.updateMany({
-      where: { id: workItemId, teamId: item.teamId },
-      data: { status: WorkStatus.RESOLVED },
+      where: {
+        id: workItemId,
+        teamId: item.teamId,
+        status: current.status,
+      },
+      data: { status: targetStatus },
     });
 
     if (updated.count === 0) {
-      throw new AppError(404, "Work item not found");
+      throw new AppError(409, "Work item status changed concurrently; retry the request");
     }
 
-    if (current.status !== WorkStatus.RESOLVED) {
-      await tx.activityEvent.create({
-        data: {
-          eventType: "STATUS_CHANGED",
-          oldValue: current.status,
-          newValue: WorkStatus.RESOLVED,
-          actorId: userId,
-          workItemId,
-        },
-      });
-    }
+    await tx.activityEvent.create({
+      data: {
+        eventType: "STATUS_CHANGED",
+        oldValue: current.status,
+        newValue: targetStatus,
+        actorId: userId,
+        workItemId,
+      },
+    });
 
     return tx.workItem.findFirst({
       where: { id: workItemId, teamId: item.teamId },
@@ -487,6 +515,11 @@ export const approveWorkItem = async (userId: number, workItemIdValue: unknown) 
     });
   });
 };
+
+export const approveWorkItem = async (userId: number, workItemIdValue: unknown) =>
+  transitionWorkItemStatus(userId, workItemIdValue, {
+    status: WorkStatus.RESOLVED,
+  });
 
 export const getWorkItemActivity = async (
   userId: number,

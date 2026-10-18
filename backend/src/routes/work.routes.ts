@@ -15,6 +15,7 @@ import {
   getWorkItem,
   getWorkItemTimeline,
   listTeamWorkItems,
+  transitionWorkItemStatus,
   updateWorkItem,
 } from "../controllers/work.controller";
 
@@ -52,6 +53,12 @@ router.patch(
   updateWorkItem
 );
 
+router.patch(
+  "/items/:workItemId/status",
+  requireWorkItemAccess("workItemId"),
+  transitionWorkItemStatus
+);
+
 router.get(
   "/items/:workItemId/activity",
   requireWorkItemAccess("workItemId"),
@@ -67,7 +74,7 @@ router.post(
 router.patch(
   "/items/:workItemId/approve",
   requireWorkItemAccess("workItemId"),
-  requireRole([Role.LEAD, Role.ADMIN]),
+  requireRole(Role.LEAD),
   approveWorkItem
 );
 

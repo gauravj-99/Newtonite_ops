@@ -6,6 +6,7 @@ import {
   getWorkItemActivity,
   getWorkItemById,
   listWorkItems,
+  transitionWorkItemStatus as transitionWorkItemStatusService,
   updateWorkItem as updateWorkItemService,
 } from "../services/work-item.service";
 import { addWorkItemComment } from "../services/comment.service";
@@ -101,6 +102,24 @@ export const getWorkItemTimeline = async (
     );
 
     res.status(200).json({ success: true, data: events });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const transitionWorkItemStatus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const item = await transitionWorkItemStatusService(
+      getAuthenticatedUserId(req),
+      req.params.workItemId,
+      req.body
+    );
+
+    res.status(200).json({ success: true, data: item });
   } catch (error) {
     next(error);
   }

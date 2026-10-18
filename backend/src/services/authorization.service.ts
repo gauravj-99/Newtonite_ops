@@ -71,10 +71,10 @@ export class AuthorizationService {
 
     await this.assertTeamAccess(userId, workItem.teamId);
 
-    const hasLeadOrAdmin = await this.hasAnyRole(userId, workItem.teamId, [Role.LEAD, Role.ADMIN]);
+    const isLead = await this.hasAnyRole(userId, workItem.teamId, [Role.LEAD]);
 
-    if (!hasLeadOrAdmin) {
-      throw new AppError(403, "Only LEAD and ADMIN roles can approve work items");
+    if (!isLead) {
+      throw new AppError(403, "Only a LEAD can approve a work item");
     }
   }
 
